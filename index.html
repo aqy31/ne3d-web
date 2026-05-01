@@ -3,11 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>المعرض التفاعلي - حركة الكاميرا</title>
+    <title>المعرض التفاعلي</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #111; }
         canvas { display: block; }
         
+        /* تصميم شاشة التحميل */
+        #loading-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        #loading-screen h1 { margin: 0 0 10px 0; color: #f39c12; }
+        #loading-text { font-size: 1.2rem; }
+
+        /* نافذة المعلومات */
         #info-panel {
             position: absolute;
             bottom: 20px;
@@ -28,17 +45,22 @@
             background: #e74c3c; color: white; border: none;
             padding: 10px 20px; margin-top: 15px; cursor: pointer; border-radius: 5px; font-weight: bold;
         }
-        #close-btn:hover { background: #c0392b; }
     </style>
-    <!-- استدعاء مكتبة GSAP لتحريك الكاميرا بسلاسة -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
 <body>
 
+    <!-- شاشة التحميل -->
+    <div id="loading-screen">
+        <h1>جاري تجهيز المتحف</h1>
+        <div id="loading-text">0%</div>
+    </div>
+
+    <!-- نافذة عرض المعلومات -->
     <div id="info-panel">
         <h2 id="piece-name">اسم القطعة</h2>
         <p id="piece-desc">المعلومات</p>
-        <button id="close-btn">تراجع (عودة للمسار)</button>
+        <button id="close-btn">تراجع</button>
     </div>
 
     <script type="importmap">
@@ -55,12 +77,13 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // 1. إعداد المشهد
         const scene = new THREE.Scene();
+        
+        // تم تغيير موقع الكاميرا للأعلى وللخلف لتفادي الاصطدام بالأرضيات
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 1.6, 5); // موقع البداية
+        camera.position.set(0, 3, 10); 
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
@@ -70,28 +93,47 @@
         directionalLight.position.set(5, 10, 5);
         scene.add(directionalLight);
 
-        // 2. التحكم والكاميرا
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.target.set(0, 1.5, 0);
         controls.update();
 
-        // متغيرات لحفظ مكان الكاميرا قبل الاقتراب من القطعة (لكي نعود إليه لاحقاً)
         let savedCameraPos = new THREE.Vector3();
         let savedControlsTarget = new THREE.Vector3();
-        let isZoomedIn = false; // لمنع النقر أثناء التكبير
+        let isZoomedIn = false;
 
-        // 3. تحميل المبنى والقطع
         const loader = new GLTFLoader();
         let myMuseum;
         
-        loader.load('my_museum.glb', function (gltf) {
-            myMuseum = gltf.scene;
-            scene.add(myMuseum);
-        }, undefined, function (error) {
-            console.error('خطأ في التحميل:', error);
-        });
+        const loadingScreen = document.getElementById('loading-screen');
+        const loadingText = document.getElementById('loading-text');
 
-        // 4. قاعدة بيانات القطع
+        // تحميل المجسم مع تتبع نسبة التقدم
+        loader.load(
+            'my_museum.glb', 
+            // عند اكتمال التحميل
+            function (gltf) {
+                myMuseum = gltf.scene;
+                scene.add(myMuseum);
+                // إخفاء شاشة التحميل بسلاسة
+                loadingScreen.style.opacity = '0';
+                setTimeout(() => { loadingScreen.style.display = 'none'; }, 500);
+            }, 
+            // أثناء التحميل (تحديث النسبة)
+            function (xhr) {
+                if (xhr.total > 0) {
+                    const percent = Math.round((xhr.loaded / xhr.total) * 100);
+                    loadingText.innerText = percent + '%';
+                } else {
+                    loadingText.innerText = 'جاري التحميل...';
+                }
+            }, 
+            // في حال حدوث خطأ
+            function (error) {
+                console.error('خطأ:', error);
+                loadingText.innerText = 'فشل تحميل المجسم! تأكد من اسم الملف.';
+            }
+        );
+
         const piecesInfo = {
             "Piece_1": { title: "القطعة الأولى", desc: "هذا المجسم يعود للعصر القديم..." },
             "Piece_2": { title: "القطعة الثانية", desc: "جرة فخارية مزخرفة بالخط المسماري..." },
@@ -101,9 +143,8 @@
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
 
-        // 5. برمجة النقر وحركة الكاميرا (GSAP)
-        window.addEventListener('click', (event) => {
-            // إذا كنا قريبين من قطعة (مكبرين الصورة)، نمنع النقر على قطع أخرى حتى نتراجع
+        // دعم اللمس (للموبايل) والنقر (للكمبيوتر)
+        window.addEventListener('pointerdown', (event) => {
             if (isZoomedIn) return;
 
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -118,7 +159,6 @@
                     let targetName = null;
                     let finalTargetObject = null;
 
-                    // الكود الذكي: البحث في المجسم المضروب أو المجموعات التي تحتويه (Parents)
                     let currentObj = clickedObject;
                     while (currentObj) {
                         if (piecesInfo[currentObj.name]) {
@@ -129,42 +169,27 @@
                         currentObj = currentObj.parent;
                     }
 
-                    // إذا وجدنا قطعة صحيحة
                     if (targetName && finalTargetObject) {
                         isZoomedIn = true;
-
-                        // حفظ موقع الكاميرا الحالي للعودة إليه
                         savedCameraPos.copy(camera.position);
                         savedControlsTarget.copy(controls.target);
 
-                        // الحصول على إحداثيات القطعة في العالم
                         const piecePosition = new THREE.Vector3();
                         finalTargetObject.getWorldPosition(piecePosition);
 
-                        // حساب مكان وقوف الكاميرا (أمام القطعة بقليل ومرفوعة قليلاً)
-                        // يمكنك تغيير الرقم 1.5 للتحكم بمدى الاقتراب (أصغر = أقرب)
                         const cameraOffset = new THREE.Vector3(0, 0.2, 1.5); 
                         const newCameraPos = piecePosition.clone().add(cameraOffset);
 
-                        // 1. تحريك الكاميرا باستخدام GSAP
                         gsap.to(camera.position, {
-                            x: newCameraPos.x,
-                            y: newCameraPos.y,
-                            z: newCameraPos.z,
-                            duration: 1.5, // مدة الحركة بالثواني
-                            ease: "power2.inOut" // نوع النعومة في الحركة
+                            x: newCameraPos.x, y: newCameraPos.y, z: newCameraPos.z,
+                            duration: 1.5, ease: "power2.inOut"
                         });
 
-                        // 2. توجيه نظر الكاميرا نحو القطعة
                         gsap.to(controls.target, {
-                            x: piecePosition.x,
-                            y: piecePosition.y,
-                            z: piecePosition.z,
-                            duration: 1.5,
-                            ease: "power2.inOut",
-                            onUpdate: function() { controls.update(); }, // تحديث الاتجاه أثناء الحركة
+                            x: piecePosition.x, y: piecePosition.y, z: piecePosition.z,
+                            duration: 1.5, ease: "power2.inOut",
+                            onUpdate: function() { controls.update(); },
                             onComplete: function() {
-                                // 3. إظهار نافذة المعلومات بعد انتهاء حركة الكاميرا
                                 document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
                                 document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
                                 document.getElementById('info-panel').style.display = 'block';
@@ -175,33 +200,20 @@
             }
         });
 
-        // 6. زر التراجع (العودة للمكان السابق)
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('info-panel').style.display = 'none';
-
-            // تحريك الكاميرا عائدة إلى الموقع المحفوظ
             gsap.to(camera.position, {
-                x: savedCameraPos.x,
-                y: savedCameraPos.y,
-                z: savedCameraPos.z,
-                duration: 1.5,
-                ease: "power2.inOut"
+                x: savedCameraPos.x, y: savedCameraPos.y, z: savedCameraPos.z,
+                duration: 1.5, ease: "power2.inOut"
             });
-
             gsap.to(controls.target, {
-                x: savedControlsTarget.x,
-                y: savedControlsTarget.y,
-                z: savedControlsTarget.z,
-                duration: 1.5,
-                ease: "power2.inOut",
+                x: savedControlsTarget.x, y: savedControlsTarget.y, z: savedControlsTarget.z,
+                duration: 1.5, ease: "power2.inOut",
                 onUpdate: function() { controls.update(); },
-                onComplete: function() {
-                    isZoomedIn = false; // السماح بالنقر من جديد
-                }
+                onComplete: function() { isZoomedIn = false; }
             });
         });
 
-        // 7. تحديث المشهد
         renderer.setAnimationLoop(function () {
             controls.update();
             renderer.render(scene, camera);
