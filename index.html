@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>المعرض التفاعلي - حركة الكاميرا</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        
+        #info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            display: none;
+            text-align: center;
+            min-width: 300px;
+            z-index: 10;
+            box-shadow: 0px 4px 15px rgba(0,0,0,0.5);
+        }
+        #info-panel h2 { margin-top: 0; color: #f39c12; }
+        #close-btn {
+            background: #e74c3c; color: white; border: none;
+            padding: 10px 20px; margin-top: 15px; cursor: pointer; border-radius: 5px; font-weight: bold;
+        }
+        #close-btn:hover { background: #c0392b; }
+    </style>
+    <!-- استدعاء مكتبة GSAP لتحريك الكاميرا بسلاسة -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+<body>
+
+    <div id="info-panel">
+        <h2 id="piece-name">اسم القطعة</h2>
+        <p id="piece-desc">المعلومات</p>
+        <button id="close-btn">تراجع (عودة للمسار)</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. إعداد المشهد
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.6, 5); // موقع البداية
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+        directionalLight.position.set(5, 10, 5);
+        scene.add(directionalLight);
+
+        // 2. التحكم والكاميرا
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1.5, 0);
+        controls.update();
+
+        // متغيرات لحفظ مكان الكاميرا قبل الاقتراب من القطعة (لكي نعود إليه لاحقاً)
+        let savedCameraPos = new THREE.Vector3();
+        let savedControlsTarget = new THREE.Vector3();
+        let isZoomedIn = false; // لمنع النقر أثناء التكبير
+
+        // 3. تحميل المبنى والقطع
+        const loader = new GLTFLoader();
+        let myMuseum;
+        
+        loader.load('my_museum.glb', function (gltf) {
+            myMuseum = gltf.scene;
+            scene.add(myMuseum);
+        }, undefined, function (error) {
+            console.error('خطأ في التحميل:', error);
+        });
+
+        // 4. قاعدة بيانات القطع
+        const piecesInfo = {
+            "Piece_1": { title: "القطعة الأولى", desc: "هذا المجسم يعود للعصر القديم..." },
+            "Piece_2": { title: "القطعة الثانية", desc: "جرة فخارية مزخرفة بالخط المسماري..." },
+            "Piece_3": { title: "القطعة الثالثة", desc: "لوح طيني يوثق التجارة..." }
+        };
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // 5. برمجة النقر وحركة الكاميرا (GSAP)
+        window.addEventListener('click', (event) => {
+            // إذا كنا قريبين من قطعة (مكبرين الصورة)، نمنع النقر على قطع أخرى حتى نتراجع
+            if (isZoomedIn) return;
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+
+            if (myMuseum) {
+                const intersects = raycaster.intersectObject(myMuseum, true);
+
+                if (intersects.length > 0) {
+                    let clickedObject = intersects[0].object;
+                    let targetName = null;
+                    let finalTargetObject = null;
+
+                    // الكود الذكي: البحث في المجسم المضروب أو المجموعات التي تحتويه (Parents)
+                    let currentObj = clickedObject;
+                    while (currentObj) {
+                        if (piecesInfo[currentObj.name]) {
+                            targetName = currentObj.name;
+                            finalTargetObject = currentObj;
+                            break;
+                        }
+                        currentObj = currentObj.parent;
+                    }
+
+                    // إذا وجدنا قطعة صحيحة
+                    if (targetName && finalTargetObject) {
+                        isZoomedIn = true;
+
+                        // حفظ موقع الكاميرا الحالي للعودة إليه
+                        savedCameraPos.copy(camera.position);
+                        savedControlsTarget.copy(controls.target);
+
+                        // الحصول على إحداثيات القطعة في العالم
+                        const piecePosition = new THREE.Vector3();
+                        finalTargetObject.getWorldPosition(piecePosition);
+
+                        // حساب مكان وقوف الكاميرا (أمام القطعة بقليل ومرفوعة قليلاً)
+                        // يمكنك تغيير الرقم 1.5 للتحكم بمدى الاقتراب (أصغر = أقرب)
+                        const cameraOffset = new THREE.Vector3(0, 0.2, 1.5); 
+                        const newCameraPos = piecePosition.clone().add(cameraOffset);
+
+                        // 1. تحريك الكاميرا باستخدام GSAP
+                        gsap.to(camera.position, {
+                            x: newCameraPos.x,
+                            y: newCameraPos.y,
+                            z: newCameraPos.z,
+                            duration: 1.5, // مدة الحركة بالثواني
+                            ease: "power2.inOut" // نوع النعومة في الحركة
+                        });
+
+                        // 2. توجيه نظر الكاميرا نحو القطعة
+                        gsap.to(controls.target, {
+                            x: piecePosition.x,
+                            y: piecePosition.y,
+                            z: piecePosition.z,
+                            duration: 1.5,
+                            ease: "power2.inOut",
+                            onUpdate: function() { controls.update(); }, // تحديث الاتجاه أثناء الحركة
+                            onComplete: function() {
+                                // 3. إظهار نافذة المعلومات بعد انتهاء حركة الكاميرا
+                                document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
+                                document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
+                                document.getElementById('info-panel').style.display = 'block';
+                            }
+                        });
+                    }
+                }
+            }
+        });
+
+        // 6. زر التراجع (العودة للمكان السابق)
+        document.getElementById('close-btn').addEventListener('click', () => {
+            document.getElementById('info-panel').style.display = 'none';
+
+            // تحريك الكاميرا عائدة إلى الموقع المحفوظ
+            gsap.to(camera.position, {
+                x: savedCameraPos.x,
+                y: savedCameraPos.y,
+                z: savedCameraPos.z,
+                duration: 1.5,
+                ease: "power2.inOut"
+            });
+
+            gsap.to(controls.target, {
+                x: savedControlsTarget.x,
+                y: savedControlsTarget.y,
+                z: savedControlsTarget.z,
+                duration: 1.5,
+                ease: "power2.inOut",
+                onUpdate: function() { controls.update(); },
+                onComplete: function() {
+                    isZoomedIn = false; // السماح بالنقر من جديد
+                }
+            });
+        });
+
+        // 7. تحديث المشهد
+        renderer.setAnimationLoop(function () {
+            controls.update();
+            renderer.render(scene, camera);
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
