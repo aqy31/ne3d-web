@@ -17,10 +17,8 @@
         #loading-screen h1 { margin: 0 0 10px 0; color: #f39c12; }
         #loading-text { font-size: 1.2rem; }
 
-        /* حاوية واجهة المستخدم (لكي نخفيها كلها بضغطة واحدة) */
         #ui-container { transition: opacity 0.3s ease; }
 
-        /* نافذة المعلومات */
         #info-panel {
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             background: rgba(0, 0, 0, 0.85); color: white; padding: 25px;
@@ -40,7 +38,6 @@
             cursor: pointer; z-index: 100; box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
         }
 
-        /* عصا التحكم (Joystick) للمشي */
         #joystick-zone {
             position: absolute; bottom: 30px; left: 30px;
             width: 120px; height: 120px;
@@ -53,7 +50,6 @@
             border-radius: 50%; position: absolute; pointer-events: none;
         }
 
-        /* علامة تصويب */
         #crosshair {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             width: 6px; height: 6px; background-color: rgba(255, 255, 255, 0.8);
@@ -69,7 +65,6 @@
         <div id="loading-text">0%</div>
     </div>
 
-    <!-- حاوية الـ UI العادية التي ستختفي عند الفحص -->
     <div id="ui-container">
         <button id="gyro-btn">📱 تفعيل حركة الهاتف</button>
         <div id="crosshair"></div>
@@ -78,7 +73,6 @@
         </div>
     </div>
 
-    <!-- نافذة المعلومات تظهر وحدها عند الفحص -->
     <div id="info-panel">
         <h2 id="piece-name">اسم القطعة</h2>
         <p id="piece-desc">المعلومات</p>
@@ -98,7 +92,6 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // 1. كلاس الجيروسكوب
         const _zee = new THREE.Vector3( 0, 0, 1 );
         const _euler = new THREE.Euler();
         const _q0 = new THREE.Quaternion();
@@ -138,19 +131,18 @@
 
         const scene = new THREE.Scene();
 
-        // 2. نظام الكاميرا الهجين (للتحريك بالإصبع والجيروسكوب معاً)
         const cameraRig = new THREE.Group();
-        cameraRig.position.set(0, 1.6, 5); // موقع البداية
+        cameraRig.position.set(0, 1.6, 5);
         scene.add(cameraRig);
 
-        const yawObject = new THREE.Group(); // دوران يمين/يسار بالإصبع
+        const yawObject = new THREE.Group();
         cameraRig.add(yawObject);
 
-        const pitchObject = new THREE.Group(); // دوران فوق/تحت بالإصبع
+        const pitchObject = new THREE.Group();
         yawObject.add(pitchObject);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        pitchObject.add(camera); // الكاميرا نفسها تتأثر بحركة الموبايل
+        pitchObject.add(camera);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -182,14 +174,12 @@
             gyroBtn.style.display = 'none';
         }
 
-        // 3. برمجة السحب بالإصبع للالتفات (Drag to Look) والنقر (Tap)
         let isDragging = false;
         let previousTouch = { x: 0, y: 0 };
         let dragDistance = 0;
         let isZoomedIn = false;
 
         window.addEventListener('pointerdown', (e) => {
-            // تجاهل السحب إذا تم على الأزرار أو الجوياستيك
             if (e.target.closest('#ui-container') || e.target.closest('#info-panel')) return;
             isDragging = true;
             dragDistance = 0;
@@ -203,10 +193,8 @@
             const deltaY = e.clientY - previousTouch.y;
             dragDistance += Math.abs(deltaX) + Math.abs(deltaY);
 
-            // تحريك الكاميرا بناءً على السحب
             yawObject.rotation.y -= deltaX * 0.004;
             pitchObject.rotation.x -= deltaY * 0.004;
-            // منع الكاميرا من الانقلاب للوراء
             pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
 
             previousTouch.x = e.clientX;
@@ -215,13 +203,11 @@
 
         window.addEventListener('pointerup', (e) => {
             isDragging = false;
-            // إذا كانت المسافة قصيرة جداً، نعتبرها "نقرة" (Tap) لاختيار القطعة
             if (dragDistance < 10 && !isZoomedIn && !e.target.closest('#ui-container')) {
                 fireRaycaster(e.clientX, e.clientY);
             }
         });
 
-        // 4. برمجة الجوياستيك (للمشي)
         const joystickZone = document.getElementById('joystick-zone');
         const joystickKnob = document.getElementById('joystick-knob');
         let isJoystickActive = false;
@@ -229,7 +215,7 @@
         let centerX, centerY;
 
         joystickZone.addEventListener('touchstart', (e) => {
-            if(isZoomedIn) return; // تعطيل المشي أثناء فحص القطعة
+            if(isZoomedIn) return;
             isJoystickActive = true;
             const rect = joystickZone.getBoundingClientRect();
             centerX = rect.left + rect.width / 2;
@@ -260,7 +246,6 @@
             joyMoveY = dy / maxDist; 
         }
 
-        // 5. تحميل المبنى وقاعدة البيانات
         const loader = new GLTFLoader();
         let myMuseum;
         const loadingScreen = document.getElementById('loading-screen');
@@ -282,10 +267,14 @@
             "Piece_3": { title: "القطعة الثالثة", desc: "لوح طيني يوثق التجارة..." }
         };
 
-        // 6. وضع الفحص (الاقتراب وإخفاء الواجهة)
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        
+        // متغيرات لحفظ حالة الكاميرا للعودة إليها بدقة
         let savedCameraRigPos = new THREE.Vector3();
+        let savedYaw = 0;
+        let savedPitch = 0;
+        let savedCameraRigQuat = new THREE.Quaternion();
 
         function fireRaycaster(clientX, clientY) {
             mouse.x = (clientX / window.innerWidth) * 2 - 1;
@@ -311,33 +300,59 @@
 
                     if (targetName && finalTargetObject) {
                         isZoomedIn = true;
-                        savedCameraRigPos.copy(cameraRig.position); // حفظ مكانك
                         
-                        // 1. إخفاء كل أدوات التحكم والـ UI
+                        // حفظ الموقع والدوران الحالي للعودة إليه
+                        savedCameraRigPos.copy(cameraRig.position);
+                        savedYaw = yawObject.rotation.y;
+                        savedPitch = pitchObject.rotation.x;
+                        savedCameraRigQuat.copy(cameraRig.quaternion);
+                        
                         document.getElementById('ui-container').style.opacity = '0';
                         setTimeout(() => { document.getElementById('ui-container').style.pointerEvents = 'none'; }, 300);
 
-                        // 2. إظهار معلومات القطعة
                         document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
                         document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
                         document.getElementById('info-panel').style.display = 'block';
 
-                        // 3. رفع الكاميرا والاقتراب من القطعة (وضع الفحص)
-                        const piecePos = new THREE.Vector3();
-                        finalTargetObject.getWorldPosition(piecePos);
+                        // --- السحر هنا: حساب الصندوق المحيط (Bounding Box) ---
+                        // هذا الكود يحدد مركز المجسم الحقيقي ويتجاهل نقطة الارتكاز (Pivot)
+                        const box = new THREE.Box3().setFromObject(finalTargetObject);
+                        const center = new THREE.Vector3();
+                        box.getCenter(center);
                         
-                        // نرفع الكاميرا قليلاً للأعلى ونضعها أمام القطعة
-                        const zoomOffset = new THREE.Vector3(0, 0.4, 1.2); 
-                        const targetPos = piecePos.clone().add(zoomOffset);
+                        const size = new THREE.Vector3();
+                        box.getSize(size);
+                        // أخذ أكبر بُعد للمجسم لتحديد مسافة الكاميرا المثالية
+                        const maxDim = Math.max(size.x, size.y, size.z); 
+                        
+                        // تحديد الموقع المثالي: الكاميرا ترتفع قليلاً وتتراجع للخلف بمسافة تتناسب مع حجم القطعة
+                        const idealDistance = maxDim * 1.5; 
+                        const targetPos = new THREE.Vector3(center.x, center.y + (maxDim * 0.2), center.z + idealDistance);
 
+                        // إنشاء كائن وهمي لمعرفة زاوية النظر المثالية نحو المركز الهندسي للقطعة
+                        const dummyCam = new THREE.Object3D();
+                        dummyCam.position.copy(targetPos);
+                        dummyCam.lookAt(center);
+                        const targetQuat = dummyCam.quaternion.clone();
+
+                        const startQuat = cameraRig.quaternion.clone();
+                        const proxy = { t: 0 };
+
+                        // تحريك موقع الكاميرا
                         gsap.to(cameraRig.position, {
                             x: targetPos.x, y: targetPos.y, z: targetPos.z,
-                            duration: 1.5, ease: "power2.inOut",
+                            duration: 1.5, ease: "power2.inOut"
+                        });
+
+                        // تصفير حركة الرأس اليدوية تدريجياً لكي نستلم التحكم الكامل
+                        gsap.to(yawObject.rotation, { y: 0, duration: 1.5, ease: "power2.inOut" });
+                        gsap.to(pitchObject.rotation, { x: 0, duration: 1.5, ease: "power2.inOut" });
+
+                        // توجيه الكاميرا بدقة سينمائية نحو مركز القطعة
+                        gsap.to(proxy, {
+                            t: 1, duration: 1.5, ease: "power2.inOut",
                             onUpdate: () => {
-                                // توجيه النظر للقطعة أثناء الاقتراب
-                                if(!useGyro) {
-                                    yawObject.lookAt(piecePos.x, cameraRig.position.y, piecePos.z);
-                                }
+                                cameraRig.quaternion.slerpQuaternions(startQuat, targetQuat, proxy.t);
                             }
                         });
                     }
@@ -345,29 +360,37 @@
             }
         }
 
-        // العودة من وضع الفحص
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('info-panel').style.display = 'none';
-            
-            // إظهار واجهة التحكم مرة أخرى
             document.getElementById('ui-container').style.pointerEvents = 'auto';
             document.getElementById('ui-container').style.opacity = '1';
 
-            // إعادة الكاميرا لمكانها الأصلي
+            const proxy = { t: 0 };
+            const currentQuat = cameraRig.quaternion.clone();
+
+            // إرجاع كل شيء للمكان والزاوية الأصلية
             gsap.to(cameraRig.position, {
                 x: savedCameraRigPos.x, y: savedCameraRigPos.y, z: savedCameraRigPos.z,
                 duration: 1.5, ease: "power2.inOut",
                 onComplete: () => { isZoomedIn = false; }
             });
+
+            gsap.to(yawObject.rotation, { y: savedYaw, duration: 1.5, ease: "power2.inOut" });
+            gsap.to(pitchObject.rotation, { x: savedPitch, duration: 1.5, ease: "power2.inOut" });
+
+            gsap.to(proxy, {
+                t: 1, duration: 1.5, ease: "power2.inOut",
+                onUpdate: () => {
+                    cameraRig.quaternion.slerpQuaternions(currentQuat, savedCameraRigQuat, proxy.t);
+                }
+            });
         });
 
-        // 7. التحديث المستمر (الحركة والمشي)
         const moveSpeed = 0.05;
         renderer.setAnimationLoop(function () {
             if (useGyro && gyroControls) gyroControls.update();
 
             if (isJoystickActive && !isZoomedIn) {
-                // حساب اتجاه المشي بناءً على الالتفات الحالي
                 const direction = new THREE.Vector3(0, 0, -1);
                 direction.applyQuaternion(yawObject.quaternion).normalize();
 
