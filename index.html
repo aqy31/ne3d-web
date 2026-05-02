@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>المعرض التفاعلي - دعم حركة الهاتف</title>
+    <title>المعرض التفاعلي - المنظور الاحترافي</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #111; }
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #111; user-select: none; touch-action: none; }
         canvas { display: block; }
         
         #loading-screen {
@@ -36,6 +36,13 @@
             cursor: pointer; z-index: 100; box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
         }
         #gyro-btn:hover { background: #27ae60; }
+        
+        /* علامة تصويب خفيفة في منتصف الشاشة للمساعدة في التوجيه */
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 6px; height: 6px; background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 50%; pointer-events: none; z-index: 5;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
@@ -46,8 +53,8 @@
         <div id="loading-text">0%</div>
     </div>
 
-    <!-- الزر الأخضر لتفعيل الحساسات -->
     <button id="gyro-btn">📱 تفعيل حركة الهاتف</button>
+    <div id="crosshair"></div>
 
     <div id="info-panel">
         <h2 id="piece-name">اسم القطعة</h2>
@@ -67,9 +74,8 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // --- كلاس برمجة الجيروسكوب المدمج (لكي لا نعتمد على ملفات خارجية قد تُحذف) ---
+        // 1. إعداد الجيروسكوب المدمج
         const _zee = new THREE.Vector3( 0, 0, 1 );
         const _euler = new THREE.Euler();
         const _q0 = new THREE.Quaternion();
@@ -82,17 +88,14 @@
                 this.enabled = true;
                 this.deviceOrientation = {};
                 this.screenOrientation = 0;
-                
                 this.onDeviceOrientationChangeEvent = ( event ) => { this.deviceOrientation = event; };
                 this.onScreenOrientationChangeEvent = () => { this.screenOrientation = window.orientation || 0; };
-                
                 this.connect = () => {
                     this.onScreenOrientationChangeEvent();
                     window.addEventListener( 'orientationchange', this.onScreenOrientationChangeEvent );
                     window.addEventListener( 'deviceorientation', this.onDeviceOrientationChangeEvent );
                     this.enabled = true;
                 };
-                
                 this.update = () => {
                     if ( !this.enabled ) return;
                     const device = this.deviceOrientation;
@@ -101,7 +104,6 @@
                         const beta = device.beta ? THREE.MathUtils.degToRad( device.beta ) : 0;
                         const gamma = device.gamma ? THREE.MathUtils.degToRad( device.gamma ) : 0;
                         const orient = this.screenOrientation ? THREE.MathUtils.degToRad( this.screenOrientation ) : 0;
-                        
                         _euler.set( beta, alpha, - gamma, 'YXZ' );
                         this.object.quaternion.setFromEuler( _euler );
                         this.object.quaternion.multiply( _q1 );
@@ -111,11 +113,22 @@
                 this.connect();
             }
         }
-        // -------------------------------------------------------------
 
         const scene = new THREE.Scene();
+
+        // 2. نظام الكاميرا الجديد (Camera Rig)
+        // هذا الصندوق الوهمي هو الذي سيمشي في الغرفة، ويدور لليمين واليسار بإصبعك
+        const cameraRig = new THREE.Group();
+        cameraRig.position.set(0, 1.6, 5); // 1.6 متر هو ارتفاع مستوى نظر الإنسان الطبيعي
+        scene.add(cameraRig);
+
+        // هذا الصندوق الداخلي مسؤول عن النظر للأعلى والأسفل بإصبعك
+        const pitchObject = new THREE.Group();
+        cameraRig.add(pitchObject);
+
+        // الكاميرا الفعلية (متروكة لحركة الهاتف إذا تم تفعيلها)
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 3, 10); 
+        pitchObject.add(camera);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -127,47 +140,79 @@
         directionalLight.position.set(5, 10, 5);
         scene.add(directionalLight);
 
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(0, 1.5, 0);
-        controls.update();
-
         let gyroControls = null;
         let useGyro = false;
-        let savedCameraPos = new THREE.Vector3();
-        let savedControlsTarget = new THREE.Vector3();
         let isZoomedIn = false;
+        let savedCameraRigPos = new THREE.Vector3();
 
+        // تفعيل حركة الهاتف
         const gyroBtn = document.getElementById('gyro-btn');
         gyroBtn.addEventListener('click', () => {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(permissionState => {
-                        if (permissionState === 'granted') {
-                            activateGyro();
-                        } else {
-                            alert('عذراً، يجب الموافقة على إذن الحركة لتفعيل الميزة.');
-                        }
-                    })
-                    .catch(console.error);
+                DeviceOrientationEvent.requestPermission().then(permissionState => {
+                    if (permissionState === 'granted') activateGyro();
+                }).catch(console.error);
             } else {
                 activateGyro();
             }
         });
 
         function activateGyro() {
-            gyroControls = new CustomDeviceOrientation(camera); // استخدام الكلاس المدمج
+            // إعادة ضبط الالتفات اليدوي للكاميرا لتجنب تضارب الزوايا
+            pitchObject.rotation.set(0, 0, 0); 
+            gyroControls = new CustomDeviceOrientation(camera);
             useGyro = true;
-            controls.enabled = false;
             gyroBtn.style.display = 'none';
         }
+
+        // 3. برمجة السحب بالإصبع/الماوس (Drag to Look)
+        let isDragging = false;
+        let dragDistance = 0;
+        let previousTouch = { x: 0, y: 0 };
+
+        window.addEventListener('pointerdown', (e) => {
+            if (e.target.id === 'gyro-btn' || e.target.id === 'close-btn' || isZoomedIn) return;
+            isDragging = true;
+            dragDistance = 0;
+            previousTouch.x = e.clientX;
+            previousTouch.y = e.clientY;
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isDragging || isZoomedIn) return;
+            
+            const deltaX = e.clientX - previousTouch.x;
+            const deltaY = e.clientY - previousTouch.y;
+            dragDistance += Math.abs(deltaX) + Math.abs(deltaY); // حساب مسافة السحب لتمييزها عن النقر
+
+            // الدوران يميناً ويساراً (يعمل دائماً حتى مع تفعيل الهاتف)
+            cameraRig.rotation.y -= deltaX * 0.003;
+
+            // الدوران للأعلى والأسفل (يعمل فقط إذا كان الهاتف غير مفعل)
+            if (!useGyro) {
+                pitchObject.rotation.x -= deltaY * 0.003;
+                // منع الكاميرا من الانقلاب (تقييد زاوية الرقبة)
+                pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
+            }
+
+            previousTouch.x = e.clientX;
+            previousTouch.y = e.clientY;
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            isDragging = false;
+            // إذا كانت المسافة التي تحركها الإصبع صغيرة جداً، نعتبرها "نقرة" (Tap)
+            if (dragDistance < 10 && !isZoomedIn && e.target.id !== 'gyro-btn' && e.target.id !== 'close-btn') {
+                handleInteraction(e.clientX, e.clientY);
+            }
+        });
 
         const loader = new GLTFLoader();
         let myMuseum;
         const loadingScreen = document.getElementById('loading-screen');
         const loadingText = document.getElementById('loading-text');
 
-        loader.load(
-            'my_museum.glb', 
+        loader.load('my_museum.glb', 
             function (gltf) {
                 myMuseum = gltf.scene;
                 scene.add(myMuseum);
@@ -175,13 +220,7 @@
                 setTimeout(() => { loadingScreen.style.display = 'none'; }, 500);
             }, 
             function (xhr) {
-                if (xhr.total > 0) {
-                    loadingText.innerText = Math.round((xhr.loaded / xhr.total) * 100) + '%';
-                }
-            }, 
-            function (error) {
-                console.error(error);
-                loadingText.innerText = 'فشل التحميل!';
+                if (xhr.total > 0) loadingText.innerText = Math.round((xhr.loaded / xhr.total) * 100) + '%';
             }
         );
 
@@ -194,12 +233,12 @@
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
 
-        window.addEventListener('pointerdown', (event) => {
-            if (isZoomedIn) return;
-            if(event.target.id === 'gyro-btn') return;
-
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        // 4. منطق التفاعل (النقر للقطعة أو النقر للمشي)
+        function handleInteraction(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+            
+            // نطلق الشعاع من الكاميرا الفعلية
             raycaster.setFromCamera(mouse, camera);
 
             if (myMuseum) {
@@ -210,6 +249,7 @@
                     let targetName = null;
                     let finalTargetObject = null;
 
+                    // التحقق مما إذا كانت قطعة أثرية
                     let currentObj = clickedObject;
                     while (currentObj) {
                         if (piecesInfo[currentObj.name]) {
@@ -221,70 +261,65 @@
                     }
 
                     if (targetName && finalTargetObject) {
+                        // --- السيناريو الأول: النقر على قطعة أثرية ---
                         isZoomedIn = true;
-                        savedCameraPos.copy(camera.position);
-                        savedControlsTarget.copy(controls.target);
+                        savedCameraRigPos.copy(cameraRig.position); // حفظ مكانك الحالي للعودة إليه
 
                         const piecePosition = new THREE.Vector3();
                         finalTargetObject.getWorldPosition(piecePosition);
-                        const cameraOffset = new THREE.Vector3(0, 0.2, 1.5); 
-                        const newCameraPos = piecePosition.clone().add(cameraOffset);
+                        
+                        // الاقتراب من القطعة مع الحفاظ على مستوى النظر
+                        const newCameraPos = new THREE.Vector3(piecePosition.x, 1.6, piecePosition.z + 1.2);
 
-                        if (useGyro) {
-                            gsap.to(camera.position, {
-                                x: newCameraPos.x, y: newCameraPos.y, z: newCameraPos.z,
-                                duration: 1.5, ease: "power2.inOut",
-                                onComplete: function() {
-                                    document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
-                                    document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
-                                    document.getElementById('info-panel').style.display = 'block';
-                                }
-                            });
-                        } else {
-                            gsap.to(camera.position, {
-                                x: newCameraPos.x, y: newCameraPos.y, z: newCameraPos.z,
-                                duration: 1.5, ease: "power2.inOut"
-                            });
-
-                            gsap.to(controls.target, {
-                                x: piecePosition.x, y: piecePosition.y, z: piecePosition.z,
-                                duration: 1.5, ease: "power2.inOut",
-                                onUpdate: function() { controls.update(); },
-                                onComplete: function() {
-                                    document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
-                                    document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
-                                    document.getElementById('info-panel').style.display = 'block';
-                                }
+                        gsap.to(cameraRig.position, {
+                            x: newCameraPos.x, y: newCameraPos.y, z: newCameraPos.z,
+                            duration: 1.5, ease: "power2.inOut",
+                            onComplete: function() {
+                                document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
+                                document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
+                                document.getElementById('info-panel').style.display = 'block';
+                            }
+                        });
+                        
+                        // توجيه النظر للقطعة (فقط إذا لم يكن الجيروسكوب مفعلاً)
+                        if (!useGyro) {
+                            const dummyRig = cameraRig.clone();
+                            dummyRig.lookAt(piecePosition.x, 1.6, piecePosition.z);
+                            gsap.to(cameraRig.rotation, {
+                                y: dummyRig.rotation.y, duration: 1.5, ease: "power2.inOut"
                             });
                         }
+
+                    } else {
+                        // --- السيناريو الثاني: النقر على الأرضية للتحرك (Teleportation) ---
+                        // نأخذ الإحداثيات التي تم النقر عليها، وننقل الصندوق الوهمي إليها
+                        const hitPoint = intersects[0].point;
+                        
+                        gsap.to(cameraRig.position, {
+                            x: hitPoint.x, 
+                            z: hitPoint.z, 
+                            // نحافظ على ارتفاع الكاميرا ثابتاً لكي لا تنزل تحت الأرض
+                            duration: 1.2, 
+                            ease: "power2.out" 
+                        });
                     }
                 }
             }
-        });
+        }
 
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('info-panel').style.display = 'none';
-            
-            gsap.to(camera.position, {
-                x: savedCameraPos.x, y: savedCameraPos.y, z: savedCameraPos.z,
+            // العودة للمكان السابق بعد قراءة المعلومات
+            gsap.to(cameraRig.position, {
+                x: savedCameraRigPos.x, y: savedCameraRigPos.y, z: savedCameraRigPos.z,
                 duration: 1.5, ease: "power2.inOut",
                 onComplete: function() { isZoomedIn = false; }
             });
-
-            if (!useGyro) {
-                gsap.to(controls.target, {
-                    x: savedControlsTarget.x, y: savedControlsTarget.y, z: savedControlsTarget.z,
-                    duration: 1.5, ease: "power2.inOut",
-                    onUpdate: function() { controls.update(); }
-                });
-            }
         });
 
         renderer.setAnimationLoop(function () {
             if (useGyro && gyroControls) {
                 gyroControls.update();
-            } else {
-                controls.update();
             }
             renderer.render(scene, camera);
         });
