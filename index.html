@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>المعرض التفاعلي - محاكاة الواقع الافتراضي للموبايل</title>
+    <title>المعرض التفاعلي - وضع الفحص الاحترافي</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #111; user-select: none; touch-action: none; }
         canvas { display: block; }
@@ -17,22 +17,22 @@
         #loading-screen h1 { margin: 0 0 10px 0; color: #f39c12; }
         #loading-text { font-size: 1.2rem; }
 
-        /* تصميم نافذة المعلومات */
+        /* حاوية واجهة المستخدم (لكي نخفيها كلها بضغطة واحدة) */
+        #ui-container { transition: opacity 0.3s ease; }
+
+        /* نافذة المعلومات */
         #info-panel {
-            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85); color: white; padding: 20px;
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85); color: white; padding: 25px;
             border-radius: 12px; display: none; text-align: center;
-            min-width: 300px; z-index: 10; box-shadow: 0px 4px 15px rgba(0,0,0,0.5);
-            pointer-events: auto;
+            min-width: 300px; z-index: 100; box-shadow: 0px 4px 15px rgba(0,0,0,0.5);
         }
-        #info-panel h2 { margin-top: 0; color: #f39c12; font-size: 1.2rem; }
-        #info-panel p { font-size: 0.9rem; }
+        #info-panel h2 { margin-top: 0; color: #f39c12; }
         #close-btn {
-            background: #e74c3c; color: white; border: none; padding: 8px 15px;
-            margin-top: 10px; cursor: pointer; border-radius: 5px; font-weight: bold;
+            background: #e74c3c; color: white; border: none; padding: 10px 20px;
+            margin-top: 15px; cursor: pointer; border-radius: 5px; font-weight: bold;
         }
 
-        /* زر تفعيل حركة الهاتف */
         #gyro-btn {
             position: absolute; top: 20px; right: 20px;
             background: #2ecc71; color: white; border: none;
@@ -44,25 +44,23 @@
         #joystick-zone {
             position: absolute; bottom: 30px; left: 30px;
             width: 120px; height: 120px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4);
             z-index: 100; display: flex; justify-content: center; align-items: center;
         }
         #joystick-knob {
-            width: 50px; height: 50px;
-            background: rgba(255, 255, 255, 0.8);
-            border-radius: 50%; position: absolute;
-            top: 50%; left: 50%; transform: translate(-50%, -50%);
-            pointer-events: none;
+            width: 50px; height: 50px; background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%; position: absolute; pointer-events: none;
         }
 
-        /* علامة تصويب لسهولة النقر على القطع */
+        /* علامة تصويب */
         #crosshair {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             width: 6px; height: 6px; background-color: rgba(255, 255, 255, 0.8);
             border-radius: 50%; pointer-events: none; z-index: 5;
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
 <body>
 
@@ -71,19 +69,20 @@
         <div id="loading-text">0%</div>
     </div>
 
-    <button id="gyro-btn">📱 تفعيل حركة الهاتف</button>
-    
-    <div id="crosshair"></div>
-
-    <!-- عصا التحكم -->
-    <div id="joystick-zone">
-        <div id="joystick-knob"></div>
+    <!-- حاوية الـ UI العادية التي ستختفي عند الفحص -->
+    <div id="ui-container">
+        <button id="gyro-btn">📱 تفعيل حركة الهاتف</button>
+        <div id="crosshair"></div>
+        <div id="joystick-zone">
+            <div id="joystick-knob"></div>
+        </div>
     </div>
 
+    <!-- نافذة المعلومات تظهر وحدها عند الفحص -->
     <div id="info-panel">
         <h2 id="piece-name">اسم القطعة</h2>
         <p id="piece-desc">المعلومات</p>
-        <button id="close-btn">إغلاق</button>
+        <button id="close-btn">إغلاق وتراجع</button>
     </div>
 
     <script type="importmap">
@@ -99,7 +98,7 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // 1. كلاس الجيروسكوب لقراءة حركة الهاتف
+        // 1. كلاس الجيروسكوب
         const _zee = new THREE.Vector3( 0, 0, 1 );
         const _euler = new THREE.Euler();
         const _q0 = new THREE.Quaternion();
@@ -118,7 +117,6 @@
                     this.onScreenOrientationChangeEvent();
                     window.addEventListener( 'orientationchange', this.onScreenOrientationChangeEvent );
                     window.addEventListener( 'deviceorientation', this.onDeviceOrientationChangeEvent );
-                    this.enabled = true;
                 };
                 this.update = () => {
                     if ( !this.enabled ) return;
@@ -140,14 +138,19 @@
 
         const scene = new THREE.Scene();
 
-        // 2. إعداد "جسم اللاعب" (الصندوق الوهمي الذي سيمشي)
-        const playerBody = new THREE.Group();
-        playerBody.position.set(0, 1.6, 5); // مستوى نظر الإنسان واقفاً
-        scene.add(playerBody);
+        // 2. نظام الكاميرا الهجين (للتحريك بالإصبع والجيروسكوب معاً)
+        const cameraRig = new THREE.Group();
+        cameraRig.position.set(0, 1.6, 5); // موقع البداية
+        scene.add(cameraRig);
 
-        // الكاميرا تمثل "رأس اللاعب" وتتحرك مع الموبايل
+        const yawObject = new THREE.Group(); // دوران يمين/يسار بالإصبع
+        cameraRig.add(yawObject);
+
+        const pitchObject = new THREE.Group(); // دوران فوق/تحت بالإصبع
+        yawObject.add(pitchObject);
+
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        playerBody.add(camera);
+        pitchObject.add(camera); // الكاميرا نفسها تتأثر بحركة الموبايل
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -159,34 +162,9 @@
         directionalLight.position.set(5, 10, 5);
         scene.add(directionalLight);
 
-        // تحميل المبنى
-        const loader = new GLTFLoader();
-        let myMuseum;
-        const loadingScreen = document.getElementById('loading-screen');
-        const loadingText = document.getElementById('loading-text');
-
-        loader.load('my_museum.glb', 
-            function (gltf) {
-                myMuseum = gltf.scene;
-                scene.add(myMuseum);
-                loadingScreen.style.opacity = '0';
-                setTimeout(() => { loadingScreen.style.display = 'none'; }, 500);
-            }, 
-            function (xhr) {
-                if (xhr.total > 0) loadingText.innerText = Math.round((xhr.loaded / xhr.total) * 100) + '%';
-            }
-        );
-
-        const piecesInfo = {
-            "Piece_1": { title: "القطعة الأولى", desc: "هذا المجسم يعود للعصر القديم..." },
-            "Piece_2": { title: "القطعة الثانية", desc: "جرة فخارية مزخرفة بالخط المسماري..." },
-            "Piece_3": { title: "القطعة الثالثة", desc: "لوح طيني يوثق التجارة..." }
-        };
-
         let gyroControls = null;
         let useGyro = false;
 
-        // تفعيل حركة الموبايل
         const gyroBtn = document.getElementById('gyro-btn');
         gyroBtn.addEventListener('click', () => {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -204,15 +182,54 @@
             gyroBtn.style.display = 'none';
         }
 
-        // 3. برمجة عصا التحكم (Joystick) للمشي
+        // 3. برمجة السحب بالإصبع للالتفات (Drag to Look) والنقر (Tap)
+        let isDragging = false;
+        let previousTouch = { x: 0, y: 0 };
+        let dragDistance = 0;
+        let isZoomedIn = false;
+
+        window.addEventListener('pointerdown', (e) => {
+            // تجاهل السحب إذا تم على الأزرار أو الجوياستيك
+            if (e.target.closest('#ui-container') || e.target.closest('#info-panel')) return;
+            isDragging = true;
+            dragDistance = 0;
+            previousTouch.x = e.clientX;
+            previousTouch.y = e.clientY;
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            const deltaX = e.clientX - previousTouch.x;
+            const deltaY = e.clientY - previousTouch.y;
+            dragDistance += Math.abs(deltaX) + Math.abs(deltaY);
+
+            // تحريك الكاميرا بناءً على السحب
+            yawObject.rotation.y -= deltaX * 0.004;
+            pitchObject.rotation.x -= deltaY * 0.004;
+            // منع الكاميرا من الانقلاب للوراء
+            pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
+
+            previousTouch.x = e.clientX;
+            previousTouch.y = e.clientY;
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            isDragging = false;
+            // إذا كانت المسافة قصيرة جداً، نعتبرها "نقرة" (Tap) لاختيار القطعة
+            if (dragDistance < 10 && !isZoomedIn && !e.target.closest('#ui-container')) {
+                fireRaycaster(e.clientX, e.clientY);
+            }
+        });
+
+        // 4. برمجة الجوياستيك (للمشي)
         const joystickZone = document.getElementById('joystick-zone');
         const joystickKnob = document.getElementById('joystick-knob');
         let isJoystickActive = false;
-        let joyMoveX = 0; // يمين ويسار
-        let joyMoveY = 0; // للأمام والخلف
+        let joyMoveX = 0, joyMoveY = 0;
         let centerX, centerY;
 
         joystickZone.addEventListener('touchstart', (e) => {
+            if(isZoomedIn) return; // تعطيل المشي أثناء فحص القطعة
             isJoystickActive = true;
             const rect = joystickZone.getBoundingClientRect();
             centerX = rect.left + rect.width / 2;
@@ -221,45 +238,58 @@
         });
 
         joystickZone.addEventListener('touchmove', (e) => {
-            e.preventDefault(); // يمنع الشاشة من التمرير
-            if(isJoystickActive) updateJoystick(e.touches[0]);
+            if(!isJoystickActive || isZoomedIn) return;
+            e.preventDefault();
+            updateJoystick(e.touches[0]);
         });
 
         joystickZone.addEventListener('touchend', () => {
             isJoystickActive = false;
-            joystickKnob.style.transform = `translate(-50%, -50%)`; // إعادة العصا للمنتصف
-            joyMoveX = 0;
-            joyMoveY = 0;
+            joystickKnob.style.transform = `translate(-50%, -50%)`;
+            joyMoveX = 0; joyMoveY = 0;
         });
 
         function updateJoystick(touch) {
             let dx = touch.clientX - centerX;
             let dy = touch.clientY - centerY;
-            const maxDist = 40; // أقصى مسافة تتحركها العصا
+            const maxDist = 40;
             const dist = Math.sqrt(dx*dx + dy*dy);
-            
-            if(dist > maxDist) {
-                dx = (dx/dist) * maxDist;
-                dy = (dy/dist) * maxDist;
-            }
-            
+            if(dist > maxDist) { dx = (dx/dist)*maxDist; dy = (dy/dist)*maxDist; }
             joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-            
-            // تحويل القيم إلى نسب (-1 إلى 1)
             joyMoveX = dx / maxDist; 
             joyMoveY = dy / maxDist; 
         }
 
-        // 4. برمجة النقر على الشاشة لمعرفة القطع
+        // 5. تحميل المبنى وقاعدة البيانات
+        const loader = new GLTFLoader();
+        let myMuseum;
+        const loadingScreen = document.getElementById('loading-screen');
+        const loadingText = document.getElementById('loading-text');
+
+        loader.load('my_museum.glb', 
+            function (gltf) {
+                myMuseum = gltf.scene;
+                scene.add(myMuseum);
+                loadingScreen.style.opacity = '0';
+                setTimeout(() => { loadingScreen.style.display = 'none'; }, 500);
+            }, 
+            function (xhr) { if (xhr.total > 0) loadingText.innerText = Math.round((xhr.loaded / xhr.total) * 100) + '%'; }
+        );
+
+        const piecesInfo = {
+            "Piece_1": { title: "القطعة الأولى", desc: "هذا المجسم يعود للعصر القديم..." },
+            "Piece_2": { title: "القطعة الثانية", desc: "جرة فخارية مزخرفة بالخط المسماري..." },
+            "Piece_3": { title: "القطعة الثالثة", desc: "لوح طيني يوثق التجارة..." }
+        };
+
+        // 6. وضع الفحص (الاقتراب وإخفاء الواجهة)
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        let savedCameraRigPos = new THREE.Vector3();
 
-        window.addEventListener('pointerdown', (e) => {
-            // لا تتفاعل إذا كان النقر على عصا التحكم أو على الواجهة
-            if (e.target.id === 'gyro-btn' || e.target.id === 'close-btn' || e.target.id === 'joystick-zone' || e.target.id === 'joystick-knob') return;
-
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        function fireRaycaster(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
             raycaster.setFromCamera(mouse, camera);
 
             if (myMuseum) {
@@ -267,51 +297,85 @@
                 if (intersects.length > 0) {
                     let clickedObject = intersects[0].object;
                     let targetName = null;
+                    let finalTargetObject = null;
 
                     let currentObj = clickedObject;
                     while (currentObj) {
                         if (piecesInfo[currentObj.name]) {
                             targetName = currentObj.name;
+                            finalTargetObject = currentObj;
                             break;
                         }
                         currentObj = currentObj.parent;
                     }
 
-                    if (targetName) {
+                    if (targetName && finalTargetObject) {
+                        isZoomedIn = true;
+                        savedCameraRigPos.copy(cameraRig.position); // حفظ مكانك
+                        
+                        // 1. إخفاء كل أدوات التحكم والـ UI
+                        document.getElementById('ui-container').style.opacity = '0';
+                        setTimeout(() => { document.getElementById('ui-container').style.pointerEvents = 'none'; }, 300);
+
+                        // 2. إظهار معلومات القطعة
                         document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
                         document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
                         document.getElementById('info-panel').style.display = 'block';
+
+                        // 3. رفع الكاميرا والاقتراب من القطعة (وضع الفحص)
+                        const piecePos = new THREE.Vector3();
+                        finalTargetObject.getWorldPosition(piecePos);
+                        
+                        // نرفع الكاميرا قليلاً للأعلى ونضعها أمام القطعة
+                        const zoomOffset = new THREE.Vector3(0, 0.4, 1.2); 
+                        const targetPos = piecePos.clone().add(zoomOffset);
+
+                        gsap.to(cameraRig.position, {
+                            x: targetPos.x, y: targetPos.y, z: targetPos.z,
+                            duration: 1.5, ease: "power2.inOut",
+                            onUpdate: () => {
+                                // توجيه النظر للقطعة أثناء الاقتراب
+                                if(!useGyro) {
+                                    yawObject.lookAt(piecePos.x, cameraRig.position.y, piecePos.z);
+                                }
+                            }
+                        });
                     }
                 }
             }
-        });
+        }
 
+        // العودة من وضع الفحص
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('info-panel').style.display = 'none';
+            
+            // إظهار واجهة التحكم مرة أخرى
+            document.getElementById('ui-container').style.pointerEvents = 'auto';
+            document.getElementById('ui-container').style.opacity = '1';
+
+            // إعادة الكاميرا لمكانها الأصلي
+            gsap.to(cameraRig.position, {
+                x: savedCameraRigPos.x, y: savedCameraRigPos.y, z: savedCameraRigPos.z,
+                duration: 1.5, ease: "power2.inOut",
+                onComplete: () => { isZoomedIn = false; }
+            });
         });
 
-        // 5. حلقة التحديث والمشي
-        const moveSpeed = 0.05; // سرعة مشي اللاعب
-
+        // 7. التحديث المستمر (الحركة والمشي)
+        const moveSpeed = 0.05;
         renderer.setAnimationLoop(function () {
-            if (useGyro && gyroControls) {
-                gyroControls.update();
-            }
+            if (useGyro && gyroControls) gyroControls.update();
 
-            // تطبيق حركة المشي بناءً على اتجاه نظر الكاميرا
-            if (isJoystickActive) {
-                const direction = new THREE.Vector3();
-                camera.getWorldDirection(direction);
-                direction.y = 0; // لكي لا يطير اللاعب في الهواء إذا نظر للأعلى
-                direction.normalize();
+            if (isJoystickActive && !isZoomedIn) {
+                // حساب اتجاه المشي بناءً على الالتفات الحالي
+                const direction = new THREE.Vector3(0, 0, -1);
+                direction.applyQuaternion(yawObject.quaternion).normalize();
 
-                const right = new THREE.Vector3();
-                right.crossVectors(camera.up, direction).normalize();
+                const right = new THREE.Vector3(1, 0, 0);
+                right.applyQuaternion(yawObject.quaternion).normalize();
 
-                // السحب للأعلى (joyMoveY سالب) يعني المشي للأمام
-                playerBody.position.addScaledVector(direction, -joyMoveY * moveSpeed);
-                // السحب لليمين (joyMoveX موجب) يعني المشي لليمين
-                playerBody.position.addScaledVector(right, -joyMoveX * moveSpeed);
+                cameraRig.position.addScaledVector(direction, -joyMoveY * moveSpeed);
+                cameraRig.position.addScaledVector(right, joyMoveX * moveSpeed);
             }
 
             renderer.render(scene, camera);
