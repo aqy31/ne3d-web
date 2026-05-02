@@ -3,60 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>المعرض التفاعلي</title>
+    <title>المعرض التفاعلي - دعم حركة الهاتف</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #111; }
         canvas { display: block; }
         
-        /* تصميم شاشة التحميل */
+        /* شاشة التحميل */
         #loading-screen {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background-color: #1a1a1a;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            z-index: 9999;
-            transition: opacity 0.5s ease;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #1a1a1a; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: white;
+            z-index: 9999; transition: opacity 0.5s ease;
         }
         #loading-screen h1 { margin: 0 0 10px 0; color: #f39c12; }
         #loading-text { font-size: 1.2rem; }
 
         /* نافذة المعلومات */
         #info-panel {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 25px;
-            border-radius: 12px;
-            display: none;
-            text-align: center;
-            min-width: 300px;
-            z-index: 10;
-            box-shadow: 0px 4px 15px rgba(0,0,0,0.5);
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85); color: white; padding: 25px;
+            border-radius: 12px; display: none; text-align: center;
+            min-width: 300px; z-index: 10; box-shadow: 0px 4px 15px rgba(0,0,0,0.5);
         }
         #info-panel h2 { margin-top: 0; color: #f39c12; }
         #close-btn {
-            background: #e74c3c; color: white; border: none;
-            padding: 10px 20px; margin-top: 15px; cursor: pointer; border-radius: 5px; font-weight: bold;
+            background: #e74c3c; color: white; border: none; padding: 10px 20px;
+            margin-top: 15px; cursor: pointer; border-radius: 5px; font-weight: bold;
         }
+
+        /* زر تفعيل حركة الهاتف */
+        #gyro-btn {
+            position: absolute; top: 20px; right: 20px;
+            background: #2ecc71; color: white; border: none;
+            padding: 12px 20px; border-radius: 8px; font-size: 16px; font-weight: bold;
+            cursor: pointer; z-index: 100; box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+        }
+        #gyro-btn:hover { background: #27ae60; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
 <body>
 
-    <!-- شاشة التحميل -->
     <div id="loading-screen">
         <h1>جاري تجهيز المتحف</h1>
         <div id="loading-text">0%</div>
     </div>
 
-    <!-- نافذة عرض المعلومات -->
+    <!-- زر تفعيل الحساسات للموبايل -->
+    <button id="gyro-btn">📱 تفعيل حركة الهاتف</button>
+
     <div id="info-panel">
         <h2 id="piece-name">اسم القطعة</h2>
         <p id="piece-desc">المعلومات</p>
@@ -76,10 +71,9 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { DeviceOrientationControls } from 'three/addons/controls/DeviceOrientationControls.js';
 
         const scene = new THREE.Scene();
-        
-        // تم تغيير موقع الكاميرا للأعلى وللخلف لتفادي الاصطدام بالأرضيات
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 3, 10); 
 
@@ -93,44 +87,68 @@
         directionalLight.position.set(5, 10, 5);
         scene.add(directionalLight);
 
+        // أدوات التحكم الافتراضية (سحب بالماوس/الإصبع)
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.target.set(0, 1.5, 0);
         controls.update();
+
+        // متغيرات للتحكم بحركة الهاتف
+        let gyroControls = null;
+        let useGyro = false;
 
         let savedCameraPos = new THREE.Vector3();
         let savedControlsTarget = new THREE.Vector3();
         let isZoomedIn = false;
 
+        // برمجة زر تفعيل الجيروسكوب
+        const gyroBtn = document.getElementById('gyro-btn');
+        gyroBtn.addEventListener('click', () => {
+            // طلب الإذن (مطلوب لأجهزة أبل iOS 13+)
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            activateGyro();
+                        } else {
+                            alert('عذراً، يجب الموافقة على إذن الحركة لتفعيل الميزة.');
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // للأجهزة الأخرى (أندرويد)
+                activateGyro();
+            }
+        });
+
+        function activateGyro() {
+            gyroControls = new DeviceOrientationControls(camera);
+            useGyro = true;
+            controls.enabled = false; // إيقاف السحب اليدوي
+            gyroBtn.style.display = 'none'; // إخفاء الزر بعد التفعيل
+        }
+
+        // تحميل المجسم
         const loader = new GLTFLoader();
         let myMuseum;
-        
         const loadingScreen = document.getElementById('loading-screen');
         const loadingText = document.getElementById('loading-text');
 
-        // تحميل المجسم مع تتبع نسبة التقدم
         loader.load(
             'my_museum.glb', 
-            // عند اكتمال التحميل
             function (gltf) {
                 myMuseum = gltf.scene;
                 scene.add(myMuseum);
-                // إخفاء شاشة التحميل بسلاسة
                 loadingScreen.style.opacity = '0';
                 setTimeout(() => { loadingScreen.style.display = 'none'; }, 500);
             }, 
-            // أثناء التحميل (تحديث النسبة)
             function (xhr) {
                 if (xhr.total > 0) {
-                    const percent = Math.round((xhr.loaded / xhr.total) * 100);
-                    loadingText.innerText = percent + '%';
-                } else {
-                    loadingText.innerText = 'جاري التحميل...';
+                    loadingText.innerText = Math.round((xhr.loaded / xhr.total) * 100) + '%';
                 }
             }, 
-            // في حال حدوث خطأ
             function (error) {
-                console.error('خطأ:', error);
-                loadingText.innerText = 'فشل تحميل المجسم! تأكد من اسم الملف.';
+                console.error(error);
+                loadingText.innerText = 'فشل التحميل!';
             }
         );
 
@@ -143,9 +161,11 @@
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
 
-        // دعم اللمس (للموبايل) والنقر (للكمبيوتر)
         window.addEventListener('pointerdown', (event) => {
             if (isZoomedIn) return;
+
+            // تجاهل النقر إذا كان على زر الـ Gyro أو واجهة المستخدم
+            if(event.target.id === 'gyro-btn') return;
 
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -180,21 +200,36 @@
                         const cameraOffset = new THREE.Vector3(0, 0.2, 1.5); 
                         const newCameraPos = piecePosition.clone().add(cameraOffset);
 
-                        gsap.to(camera.position, {
-                            x: newCameraPos.x, y: newCameraPos.y, z: newCameraPos.z,
-                            duration: 1.5, ease: "power2.inOut"
-                        });
+                        if (useGyro) {
+                            // إذا كان وضع حركة الهاتف مفعل: نكتفي بتحريك موقع الكاميرا
+                            // ونترك دوران الكاميرا بيد المستخدم (ليتلفت بهاتفه حول القطعة)
+                            gsap.to(camera.position, {
+                                x: newCameraPos.x, y: newCameraPos.y, z: newCameraPos.z,
+                                duration: 1.5, ease: "power2.inOut",
+                                onComplete: function() {
+                                    document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
+                                    document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
+                                    document.getElementById('info-panel').style.display = 'block';
+                                }
+                            });
+                        } else {
+                            // وضع اللابتوب أو السحب العادي: نحرك الموقع ونوجه الكاميرا للنظر للقطعة
+                            gsap.to(camera.position, {
+                                x: newCameraPos.x, y: newCameraPos.y, z: newCameraPos.z,
+                                duration: 1.5, ease: "power2.inOut"
+                            });
 
-                        gsap.to(controls.target, {
-                            x: piecePosition.x, y: piecePosition.y, z: piecePosition.z,
-                            duration: 1.5, ease: "power2.inOut",
-                            onUpdate: function() { controls.update(); },
-                            onComplete: function() {
-                                document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
-                                document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
-                                document.getElementById('info-panel').style.display = 'block';
-                            }
-                        });
+                            gsap.to(controls.target, {
+                                x: piecePosition.x, y: piecePosition.y, z: piecePosition.z,
+                                duration: 1.5, ease: "power2.inOut",
+                                onUpdate: function() { controls.update(); },
+                                onComplete: function() {
+                                    document.getElementById('piece-name').innerText = piecesInfo[targetName].title;
+                                    document.getElementById('piece-desc').innerText = piecesInfo[targetName].desc;
+                                    document.getElementById('info-panel').style.display = 'block';
+                                }
+                            });
+                        }
                     }
                 }
             }
@@ -202,20 +237,29 @@
 
         document.getElementById('close-btn').addEventListener('click', () => {
             document.getElementById('info-panel').style.display = 'none';
+            
+            // العودة للمكان السابق
             gsap.to(camera.position, {
                 x: savedCameraPos.x, y: savedCameraPos.y, z: savedCameraPos.z,
-                duration: 1.5, ease: "power2.inOut"
-            });
-            gsap.to(controls.target, {
-                x: savedControlsTarget.x, y: savedControlsTarget.y, z: savedControlsTarget.z,
                 duration: 1.5, ease: "power2.inOut",
-                onUpdate: function() { controls.update(); },
                 onComplete: function() { isZoomedIn = false; }
             });
+
+            if (!useGyro) {
+                gsap.to(controls.target, {
+                    x: savedControlsTarget.x, y: savedControlsTarget.y, z: savedControlsTarget.z,
+                    duration: 1.5, ease: "power2.inOut",
+                    onUpdate: function() { controls.update(); }
+                });
+            }
         });
 
         renderer.setAnimationLoop(function () {
-            controls.update();
+            if (useGyro && gyroControls) {
+                gyroControls.update(); // تحديث حركة الهاتف
+            } else {
+                controls.update(); // تحديث السحب العادي
+            }
             renderer.render(scene, camera);
         });
 
